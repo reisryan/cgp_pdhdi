@@ -1,0 +1,391 @@
+# ============================================================
+# 1. IMPORTAÇÕES
+# ============================================================
+
+from deap import base, creator, tools, gp, algorithms
+from skimage.filters import threshold_multiotsu
+
+import matplotlib.pyplot as plt
+import networkx as nx
+import cv2 as cv
+import numpy as np
+import os
+
+cv.utils.logging.setLogLevel(cv.utils.logging.LOG_LEVEL_ERROR)
+
+# TIPAGEM DE DADOS #
+class Imagem:
+    pass
+class ImagemBinaria:
+    pass
+
+# FUNÇÕES GERAIS E DE PROCESSAMENTO DE IMAGEM #
+
+def construcao_grafo(individuo):
+    grafo = nx.DiGraph()
+    grafo.add_node(0,tipo=Imagem)
+
+    for i, gene in enumerate(individuo, start=1):
+        operador = operadores[gene[0]]
+        grafo.add_node(i, operador=gene[0], entradas=operador["entrada"], saida=operador["saida"], tipo=operador["saida"])
+        grafo.add_edge(gene[1], i)
+    return grafo
+
+def verificacao_tipos(individuo, grafo):
+    for i, gene in enumerate(individuo, start=1):
+        nome_op=gene[0]
+        conexao=gene[1]
+
+        operador = operadores[nome_op]
+        tipo_origem = grafo.nodes[conexao]["tipo"]
+        tipo_esperado = operador["entrada"][0]
+
+        if tipo_origem != tipo_esperado:
+            return False
+    return True
+
+def execucao_individuo(file, individuo, grafo):
+    valores = {}
+    valores[0] = cv.imread(f'{file}', cv.IMREAD_GRAYSCALE).astype(np.uint8)
+
+    for no in nx.topological_sort(grafo):
+        if no == 0:
+            continue
+        gene = individuo[no-1]
+        operador = gene[0]
+        funcao = operadores[operador]["funcao"]
+        conexao = gene[1]
+        entrada = valores[conexao]
+
+        if verificacao_tipos([gene], grafo):
+            valores[no] = funcao(entrada)
+        #cv.imwrite(f"saida_{no}.png", valores[no])
+            #print(f"No {no} resultou em {valores[no]}")
+
+    return valores
+
+def erro(esperado, resultado):
+    err = np.mean(np.abs(esperado.astype(np.float64) - resultado.astype(np.float64)))
+    return err
+
+def fitness_individuo(valores, esperado):
+    fitness = 0
+
+    saida = valores[max(valores.keys())]
+    fitness = erro(esperado, saida)
+    return fitness
+
+def conexoes_validas(grafo, operador, no):
+    conexoes = []
+    for i in grafo.nodes:
+        # somente pode conectar nos anteriores
+        if i >= no:
+            continue
+        if grafo.nodes[i]["tipo"] == operadores[operador]["entrada"][0]:
+            conexoes.append(i)
+        
+    return conexoes
+
+def gera_individuo():
+    individuo = []
+    
+    grafo = nx.DiGraph()
+    grafo.add_node(0, tipo=Imagem)
+
+    for no in range(1, len(operadores)+1):
+        op_validos = []
+        for op in operadores:
+            conexoes = conexoes_validas(grafo, op, no)
+            if conexoes:
+                op_validos.append(op)
+
+        operador = np.random.choice(op_validos)
+        conexoes = conexoes_validas(grafo, operador, no)
+        conexao = np.random.choice(conexoes)
+
+        individuo.append([operador, conexao])
+
+        grafo.add_node(no, operador=operador, tipo=operadores[operador]["saida"])
+        grafo.add_edge(conexao, no)
+    return individuo
+
+
+def clahe(imagem):
+    clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    return clahe.apply(imagem)
+
+def limiares(imagem):
+    lim = threshold_multiotsu(imagem, classes=3)
+    return lim
+
+def otsu(imagem):
+    lim = limiares(imagem)
+    _, imgbin = cv.threshold(imagem, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
+    return imgbin
+
+def multiotsu(imagem):
+    lim = limiares(imagem)
+    _, imgbin = cv.threshold(imagem, lim[0], 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
+    return imgbin
+
+def nick(imagem):
+    ws = 7
+    k_nick = -0.05  # Parâmetro de controle da influência do desvio padrão local.
+    img_f = imagem.astype(np.float64)
+    
+    # Cálculo eficiente da média local m(x, y) usando Box Filter (filtro de caixa 2D uniforme).
+    m_img = cv.boxFilter(img_f, -1, (ws, ws), normalize=True)
+    
+    # Cálculo da média dos quadrados locais para computar a variância local de forma otimizada.
+    img_sq = img_f ** 2
+    sum_sq_img = cv.boxFilter(img_sq, -1, (ws, ws), normalize=False)
+    
+    NP = ws * ws
+        # Cálculo do radicando (estimador de variância/desvio padrão da vizinhança).
+        # Garante-se que valores levemente negativos causados por precisão numérica sejam zerados.
+    radicand = (sum_sq_img - (m_img ** 2)) / NP
+    radicand = np.maximum(radicand, 0.0)
+    
+        # Geração do mapa bidimensional de limiares locais T_nick_img.
+    T_nick_img = m_img + k_nick * np.sqrt(radicand)
+    
+        # Segmentação local: pixels com intensidade menor ou igual ao limiar local viram preto (0),
+        # e pixels maiores viram branco (255).
+    img_nick = np.zeros_like(imagem, dtype=np.uint8)
+    img_nick[imagem <= T_nick_img] = 0
+    img_nick[imagem > T_nick_img] = 255
+    
+        # ==============================================================================
+        # 5. DETECÇÃO DE MANCHAS (SMEAR) POR DENSIDADE E MESCLAGEM HÍBRIDA
+        # ==============================================================================
+        # Manchas ou vazamento de tinta (smear) degradam a binarização global.
+        # Este bloco divide a imagem binarizada global em blocos não-sobrepostos,
+        # calcula a densidade de pixels pretos (texto/mancha) em cada bloco e
+        # rotula blocos com densidade anormalmente alta (outliers) como manchas.
+    
+    k_smear = 0.001
+    h, w = imagem.shape
+    fSlist = []
+    blockscoords = []
+    
+        # Partição da imagem em blocos disjuntos de dimensão ws x ws.
+    for y in range(0, h, ws):
+        for x in range(0, w, ws):
+            block = imagem[y:y+ws, x:x+ws]
+            tp = block.size
+            if tp > 0:
+                # Quantidade de pixels pretos no bloco.
+                bp = np.sum(block == 0)
+                fS = bp / tp                 # Fração de pixels pretos (densidade).
+                fSlist.append(fS)
+                blockscoords.append((y, x, fS, block.shape))
+    
+        # Média e desvio padrão global da densidade de pixels pretos por bloco.
+    m_fS, s_fS = np.mean(fSlist), np.std(fSlist)
+    
+    smear_mask = np.zeros_like(imagem)
+    
+        # Classificação dos blocos: se a fração de pretos exceder (média + k_smear * desvio_padrão),
+        # a região é classificada como mancha ou região densa de interesse.
+    for y, x, fS, shape in blockscoords:
+        if fS > (m_fS + k_smear * s_fS):
+            smear_mask[y:y+shape[0], x:x+shape[1]] = 255
+    
+        # Dilatação morfológica da máscara de manchas para abranger as bordas e áreas de transição.
+    kernel_dilate_mask = np.ones((ws, ws), np.uint8)
+    smear_mask = cv.dilate(smear_mask, kernel_dilate_mask, iterations=1)
+    
+        # Mesclagem híbrida (Hybrid Binarization):
+        # - Nas áreas cobertas pela máscara de mancha (smear_mask == 255), utiliza-se o resultado
+        #   do algoritmo local adaptativo (img_nick), que é mais robusto a variações locais de iluminação.
+        # - Nas áreas limpas de fundo (fundo normal), preserva-se o resultado da binarização global.
+    img_b2 = np.where(smear_mask == 255, img_nick, imagem)
+    return img_b2
+
+# PRIMITIVAS #
+
+operadores = {
+    "Clahe": {"funcao": clahe, "entrada": [Imagem], "saida": Imagem},
+    "Otsu": {"funcao": otsu, "entrada": [Imagem], "saida": ImagemBinaria},
+    "MultiOtsu": {"funcao": multiotsu, "entrada": [Imagem], "saida": ImagemBinaria},
+    "NickImagem": {"funcao": nick, "entrada": [Imagem], "saida": ImagemBinaria},
+    "NickBinaria": {"funcao": nick, "entrada": [ImagemBinaria], "saida": ImagemBinaria}
+}
+
+
+# FITNESS FUNÇÃO DE AVALIAÇÃO #
+
+# Mminimizar o resultado de erro entre a imagem resultante e a imagem esperada
+creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
+creator.create("Individuo", list, fitness=creator.FitnessMin)
+toolbox = base.Toolbox()
+toolbox.register("individual", tools.initIterate, creator.Individuo, gera_individuo)
+toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+
+# INDIVIDUOS #
+
+individuo = [
+    ["Clahe", 0],
+    ["Otsu", 1],
+    ["MultiOtsu", 1],
+    ["NickImagem", 1],
+    ["NickBinaria", 2]
+]
+
+
+# GRAFO CARTESIANO #
+
+grafo = construcao_grafo(individuo)
+# VERIFICAÇÃO DE TIPOS #
+print(verificacao_tipos(individuo, grafo))
+
+
+
+# EXECUÇÃO #
+
+#if verificacao_tipos(individuo, grafo):
+#    valores = execucao_individuo("entrada", individuo, grafo)
+# FITNESS # 
+
+# comparar saída com objetivo
+
+input, output = [], []
+pasta = 'OriginalImages'
+for image in os.listdir(pasta):
+    nome = os.path.splitext(image)[0]
+    input.append(f'{pasta}/{image}')
+    output.append(f'GTimages/{nome}_estGT.tiff')
+    break
+
+for i, j in list(zip(input, output)):
+    esperado = cv.imread(f'{j}', cv.IMREAD_GRAYSCALE).astype(np.uint8)
+    if verificacao_tipos(individuo, grafo):
+        v = execucao_individuo(i, individuo, grafo)
+    fitness = fitness_individuo(v, esperado)
+    print(fitness)
+
+# AVALIAR - EVALUATE # 
+
+individuo = gera_individuo()
+grafo = construcao_grafo(individuo)
+
+def avaliar(individuo, input, output):
+
+    grafo = construcao_grafo(individuo)
+
+    if not verificacao_tipos(individuo, grafo):
+        return (float("inf"),)
+    erros = []
+
+    for input, output in list(zip(input, output)):
+        img_input = cv.imread(f'{input}', cv.IMREAD_GRAYSCALE).astype(np.uint8)
+        img_output = cv.imread(f'{output}', cv.IMREAD_GRAYSCALE).astype(np.uint8)
+        valores = execucao_individuo(input, individuo, grafo)
+        erro_img = fitness_individuo(valores, img_output)
+        erros.append(erro_img)
+    fitness = np.mean(erros)
+
+    return (fitness,)
+
+
+toolbox.register("evaluate", avaliar, input=input, output=output)
+
+#população
+
+# criar população
+populacao = toolbox.population(n=20)
+
+for individuo in populacao:
+
+    fitness = toolbox.evaluate(individuo)
+
+    individuo.fitness.values = fitness
+
+    print(individuo)
+    print(individuo.fitness.values)
+
+# MUTACAO #
+# implementar mutação uniforme e depois efemera
+def mutacao(individuo):
+
+    while True:
+
+        filho = creator.Individuo(individuo)
+
+        # índice do gene: 0, 1, 2, 3, 4
+        indice = np.random.randint(0, len(filho))
+
+        # número real do nó: 1, 2, 3, 4, 5
+        no = indice + 1
+
+        grafo = construcao_grafo(filho)
+
+        operadores_validos = []
+
+        for nome in operadores:
+
+            conexoes = conexoes_validas(
+                grafo,
+                nome,
+                no
+            )
+
+            if conexoes:
+                operadores_validos.append(nome)
+
+        operador = np.random.choice(operadores_validos)
+
+        conexoes = conexoes_validas(
+            grafo,
+            operador,
+            no
+        )
+
+        conexao = np.random.choice(conexoes)
+
+        filho[indice] = [operador, conexao]
+
+        grafo_novo = construcao_grafo(filho)
+
+        if verificacao_tipos(filho, grafo_novo):
+            return filho,
+
+toolbox.register("mutate", mutacao)
+
+#crossover onepoint
+# inicialização half and half
+# EVOLUCAO #
+pai = toolbox.individual()
+
+pai.fitness.values = toolbox.evaluate(pai)
+
+for geracao in range(20):
+
+    filhos = []
+
+    for i in range(20):
+
+        filho, = toolbox.mutate(pai)
+
+        filho.fitness.values = toolbox.evaluate(filho)
+
+        filhos.append(filho)
+
+    candidatos = [pai] + filhos
+
+    pai = tools.selBest(candidatos, 1)[0]
+
+    print(f"Geração {geracao}: "
+        f"fitness = {pai.fitness.values[0]}")
+
+
+# MELHOR INDIVÍDUO # 
+# mostrar melhor solução
+
+melhor = pai
+
+print("MELHOR INDIVÍDUO:")
+print(melhor)
+
+print("FITNESS:")
+print(melhor.fitness.values)
