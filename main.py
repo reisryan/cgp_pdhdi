@@ -1,10 +1,10 @@
-# ============================================================
-# 1. IMPORTAÇÕES
-# ============================================================
+# IMPORTAÇÕES #
 
 from deap import base, creator, tools, gp, algorithms
 from skimage.filters import threshold_multiotsu
 
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import networkx as nx
 import cv2 as cv
@@ -14,10 +14,13 @@ import os
 cv.utils.logging.setLogLevel(cv.utils.logging.LOG_LEVEL_ERROR)
 
 # TIPAGEM DE DADOS #
+
 class Imagem:
     pass
 class ImagemBinaria:
     pass
+
+
 
 # FUNÇÕES GERAIS E DE PROCESSAMENTO DE IMAGEM #
 
@@ -25,7 +28,7 @@ def construcao_grafo(individuo):
     grafo = nx.DiGraph()
     grafo.add_node(0,tipo=Imagem)
 
-    for i, gene in enumerate(individuo, start=1):
+    for i, gene in enumerate(individuo[:-1], start=1):
         operador = operadores[gene[0]]
         grafo.add_node(i, operador=gene[0], entradas=operador["entrada"], saida=operador["saida"], tipo=operador["saida"])
         grafo.add_edge(gene[1], i)
@@ -56,23 +59,19 @@ def execucao_individuo(file, individuo, grafo):
         funcao = operadores[operador]["funcao"]
         conexao = gene[1]
         entrada = valores[conexao]
-
-        if verificacao_tipos([gene], grafo):
-            valores[no] = funcao(entrada)
-        #cv.imwrite(f"saida_{no}.png", valores[no])
-            #print(f"No {no} resultou em {valores[no]}")
-
+        valores[no] = funcao(entrada)
+        
     return valores
 
 def erro(esperado, resultado):
     err = np.mean(np.abs(esperado.astype(np.float64) - resultado.astype(np.float64)))
     return err
 
-def fitness_individuo(valores, esperado):
+def fitness_individuo(valores, esperado, individuo):
     fitness = 0
 
-    saida = valores[max(valores.keys())]
-    fitness = erro(esperado, saida)
+    saida = individuo[-1][1]
+    fitness = erro(esperado, valores[saida])
     return fitness
 
 def conexoes_validas(grafo, operador, no):
@@ -86,13 +85,13 @@ def conexoes_validas(grafo, operador, no):
         
     return conexoes
 
-def gera_individuo():
+def gera_individuo(N_NOS=10):
     individuo = []
     
     grafo = nx.DiGraph()
     grafo.add_node(0, tipo=Imagem)
 
-    for no in range(1, len(operadores)+1):
+    for no in range(1, N_NOS+1):
         op_validos = []
         for op in operadores:
             conexoes = conexoes_validas(grafo, op, no)
@@ -107,8 +106,28 @@ def gera_individuo():
 
         grafo.add_node(no, operador=operador, tipo=operadores[operador]["saida"])
         grafo.add_edge(conexao, no)
+        saida = np.random.randint(1, N_NOS + 1)
+
+    individuo.append(["out", saida])
     return individuo
 
+def avaliar(individuo, input, output):
+
+    grafo = construcao_grafo(individuo)
+
+    if not verificacao_tipos(individuo[:-1], grafo):
+        return (float("inf"),)
+    erros = []
+
+    for input, output in list(zip(input, output)):
+        img_input = cv.imread(f'{input}', cv.IMREAD_GRAYSCALE).astype(np.uint8)
+        img_output = cv.imread(f'{output}', cv.IMREAD_GRAYSCALE).astype(np.uint8)
+        valores = execucao_individuo(input, individuo, grafo)
+        erro_img = fitness_individuo(valores, img_output, individuo)
+        erros.append(erro_img)
+    fitness = np.mean(erros)
+
+    return (fitness,)
 
 def clahe(imagem):
     clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
@@ -125,7 +144,7 @@ def otsu(imagem):
 
 def multiotsu(imagem):
     lim = limiares(imagem)
-    _, imgbin = cv.threshold(imagem, lim[0], 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
+    _, imgbin = cv.threshold(imagem, lim[0], 255, cv.THRESH_BINARY)
     return imgbin
 
 def nick(imagem):
@@ -223,29 +242,21 @@ toolbox.register("individual", tools.initIterate, creator.Individuo, gera_indivi
 toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 
 # INDIVIDUOS #
+algum_no = 0
 
 individuo = [
     ["Clahe", 0],
     ["Otsu", 1],
     ["MultiOtsu", 1],
     ["NickImagem", 1],
-    ["NickBinaria", 2]
+    ["NickBinaria", 2],
+    ["out", algum_no]
 ]
 
 
 # GRAFO CARTESIANO #
 
 grafo = construcao_grafo(individuo)
-# VERIFICAÇÃO DE TIPOS #
-print(verificacao_tipos(individuo, grafo))
-
-
-
-# EXECUÇÃO #
-
-#if verificacao_tipos(individuo, grafo):
-#    valores = execucao_individuo("entrada", individuo, grafo)
-# FITNESS # 
 
 # comparar saída com objetivo
 
@@ -259,9 +270,9 @@ for image in os.listdir(pasta):
 
 for i, j in list(zip(input, output)):
     esperado = cv.imread(f'{j}', cv.IMREAD_GRAYSCALE).astype(np.uint8)
-    if verificacao_tipos(individuo, grafo):
+    if verificacao_tipos(individuo[:-1], grafo):
         v = execucao_individuo(i, individuo, grafo)
-    fitness = fitness_individuo(v, esperado)
+    fitness = fitness_individuo(v, esperado, individuo)
     print(fitness)
 
 # AVALIAR - EVALUATE # 
@@ -269,23 +280,7 @@ for i, j in list(zip(input, output)):
 individuo = gera_individuo()
 grafo = construcao_grafo(individuo)
 
-def avaliar(individuo, input, output):
 
-    grafo = construcao_grafo(individuo)
-
-    if not verificacao_tipos(individuo, grafo):
-        return (float("inf"),)
-    erros = []
-
-    for input, output in list(zip(input, output)):
-        img_input = cv.imread(f'{input}', cv.IMREAD_GRAYSCALE).astype(np.uint8)
-        img_output = cv.imread(f'{output}', cv.IMREAD_GRAYSCALE).astype(np.uint8)
-        valores = execucao_individuo(input, individuo, grafo)
-        erro_img = fitness_individuo(valores, img_output)
-        erros.append(erro_img)
-    fitness = np.mean(erros)
-
-    return (fitness,)
 
 
 toolbox.register("evaluate", avaliar, input=input, output=output)
@@ -293,16 +288,8 @@ toolbox.register("evaluate", avaliar, input=input, output=output)
 #população
 
 # criar população
-populacao = toolbox.population(n=20)
+populacao = toolbox.population(n=2)
 
-for individuo in populacao:
-
-    fitness = toolbox.evaluate(individuo)
-
-    individuo.fitness.values = fitness
-
-    print(individuo)
-    print(individuo.fitness.values)
 
 # MUTACAO #
 # implementar mutação uniforme e depois efemera
@@ -313,7 +300,7 @@ def mutacao(individuo):
         filho = creator.Individuo(individuo)
 
         # índice do gene: 0, 1, 2, 3, 4
-        indice = np.random.randint(0, len(filho))
+        indice = np.random.randint(0, len(filho)-1)
 
         # número real do nó: 1, 2, 3, 4, 5
         no = indice + 1
@@ -333,37 +320,32 @@ def mutacao(individuo):
             if conexoes:
                 operadores_validos.append(nome)
 
-        operador = np.random.choice(operadores_validos)
+        saida = np.random.randint(1, len(filho[:-1])+1)
 
-        conexoes = conexoes_validas(
-            grafo,
-            operador,
-            no
-        )
-
-        conexao = np.random.choice(conexoes)
-
-        filho[indice] = [operador, conexao]
+        filho[-1] = ["out", saida]
 
         grafo_novo = construcao_grafo(filho)
 
-        if verificacao_tipos(filho, grafo_novo):
+        if verificacao_tipos(filho[:-1], grafo_novo):
             return filho,
 
 toolbox.register("mutate", mutacao)
 
-#crossover onepoint
-# inicialização half and half
+
 # EVOLUCAO #
-pai = toolbox.individual()
 
-pai.fitness.values = toolbox.evaluate(pai)
+fitness_history = []
 
+for individuo in populacao:
+    individuo.fitness.values = toolbox.evaluate(individuo)
+
+pai = tools.selBest(populacao, 1)[0]
+neutros_geracao = []
 for geracao in range(20):
-
+    
     filhos = []
 
-    for i in range(20):
+    for i in range(6):
 
         filho, = toolbox.mutate(pai)
 
@@ -372,12 +354,24 @@ for geracao in range(20):
         filhos.append(filho)
 
     candidatos = [pai] + filhos
-
+    
+    neutros = sum(1 for f in filhos if f.fitness.values[0] == pai.fitness.values[0])
+    print(f"Geração {geracao}: {neutros} indivíduos neutros")
+    neutros_geracao.append(neutros)
     pai = tools.selBest(candidatos, 1)[0]
-
+    print("PAI:  ", pai)
+    print("FILHO:", filho)
     print(f"Geração {geracao}: "
         f"fitness = {pai.fitness.values[0]}")
+    fitness_history.append(pai.fitness.values[0])
 
+
+plt.plot(fitness_history)
+plt.yscale('log')
+plt.xlabel('Geração')
+plt.ylabel('Erro (MAE)')
+plt.title('Evolução do Fitness')
+plt.savefig("fitness.png", dpi=150)
 
 # MELHOR INDIVÍDUO # 
 # mostrar melhor solução
