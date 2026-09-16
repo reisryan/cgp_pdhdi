@@ -1,7 +1,7 @@
 # IMPORTAÇÕES #
 
 from deap import base, creator, tools, gp, algorithms
-from skimage.filters import threshold_multiotsu
+from skimage.filters import threshold_multiotsu, threshold_sauvola
 
 import matplotlib
 matplotlib.use("Agg")
@@ -12,6 +12,7 @@ import numpy as np
 import os
 
 cv.utils.logging.setLogLevel(cv.utils.logging.LOG_LEVEL_ERROR)
+np.random.seed(1)
 
 # TIPAGEM DE DADOS #
 
@@ -20,7 +21,11 @@ class Imagem:
 class ImagemBinaria:
     pass
 
-
+#Estrutura do INDIVIDUO (genoma)
+ # nó 1: [operador, nó (operação anterior)]
+ # nó n(lasts) : [out, nó de saída]
+ # OUTPUTS[0] = imagem inicial
+ # OUTPUTS[1::n] = saída de cada nó
 
 # FUNÇÕES GERAIS E DE PROCESSAMENTO DE IMAGEM #
 
@@ -48,36 +53,59 @@ def verificacao_tipos(individuo, grafo):
     return True
 
 def execucao_individuo(file, individuo, grafo):
-    valores = {}
-    valores[0] = cv.imread(f'{file}', cv.IMREAD_GRAYSCALE).astype(np.uint8)
-
+    OUTPUTS = {}
+    OUTPUTS[0] = cv.imread(f'{file}', cv.IMREAD_GRAYSCALE).astype(np.uint8)
+    
     for no in nx.topological_sort(grafo):
         if no == 0:
             continue
-        gene = individuo[no-1]
-        operador = gene[0]
-        funcao = operadores[operador]["funcao"]
-        conexao = gene[1]
-        entrada = valores[conexao]
-        valores[no] = funcao(entrada)
-        
-    return valores
+        if no in nos_ativos(individuo):
+            gene = individuo[no-1]
+            operador = gene[0]
+            funcao = operadores[operador]["funcao"]
+            conexao = gene[1]
+            entrada = OUTPUTS[conexao]
+            OUTPUTS[no] = funcao(entrada)        
+    return OUTPUTS
 
-def erro(esperado, resultado):
-    err = np.mean(np.abs(esperado.astype(np.float64) - resultado.astype(np.float64)))
+def nos_ativos(individuo):
+    nodes_enabled = set()
+
+    to_verify = []
+    to_verify.append(individuo[-1][1])
+
+    while to_verify:
+        node_id = to_verify.pop()
+
+        if node_id in nodes_enabled:
+            continue
+
+        nodes_enabled.add(node_id)
+
+        if node_id == 0:
+            continue
+
+        gene = individuo[node_id-1]
+        conexao = gene[1]
+
+        to_verify.append(conexao)
+
+    return nodes_enabled
+
+def erro(TARGET, resultado):
+    err = np.mean((TARGET.astype(np.float64) - resultado.astype(np.float64))**2) #MSE
     return err
 
-def fitness_individuo(valores, esperado, individuo):
+def fitness_individuo(OUTPUTS, TARGET, individuo):
     fitness = 0
 
     saida = individuo[-1][1]
-    fitness = erro(esperado, valores[saida])
+    fitness = erro(TARGET, OUTPUTS[saida])
     return fitness
 
 def conexoes_validas(grafo, operador, no):
     conexoes = []
     for i in grafo.nodes:
-        # somente pode conectar nos anteriores
         if i >= no:
             continue
         if grafo.nodes[i]["tipo"] == operadores[operador]["entrada"][0]:
@@ -85,7 +113,7 @@ def conexoes_validas(grafo, operador, no):
         
     return conexoes
 
-def gera_individuo(N_NOS=10):
+def gera_individuo(N_NOS=8, N_SAIDAS=1):
     individuo = []
     
     grafo = nx.DiGraph()
@@ -106,9 +134,10 @@ def gera_individuo(N_NOS=10):
 
         grafo.add_node(no, operador=operador, tipo=operadores[operador]["saida"])
         grafo.add_edge(conexao, no)
-        saida = np.random.randint(1, N_NOS + 1)
 
-    individuo.append(["out", saida])
+    for i in range(N_SAIDAS):
+        saida = np.random.randint(1, N_NOS + 1)
+        individuo.append(["out", saida])
     return individuo
 
 def avaliar(individuo, input, output):
@@ -119,15 +148,47 @@ def avaliar(individuo, input, output):
         return (float("inf"),)
     erros = []
 
-    for input, output in list(zip(input, output)):
-        img_input = cv.imread(f'{input}', cv.IMREAD_GRAYSCALE).astype(np.uint8)
-        img_output = cv.imread(f'{output}', cv.IMREAD_GRAYSCALE).astype(np.uint8)
-        valores = execucao_individuo(input, individuo, grafo)
-        erro_img = fitness_individuo(valores, img_output, individuo)
+    for image_input_path, image_output_path in zip(input, output):
+        img_output = cv.imread(f'{image_output_path}', cv.IMREAD_GRAYSCALE).astype(np.uint8)
+        OUTPUTS = execucao_individuo(image_input_path, individuo, grafo)
+        erro_img = fitness_individuo(OUTPUTS, img_output, individuo)
         erros.append(erro_img)
     fitness = np.mean(erros)
 
     return (fitness,)
+
+def mutacao(individuo):
+
+    while True:
+        mutation_rate = 0.5
+
+        filho = creator.Individuo(individuo)
+        indice = np.random.randint(0, len(filho)-1)
+        no = indice + 1
+
+        grafo = construcao_grafo(filho)
+
+        operadores_validos = []
+
+        for nome in operadores:
+            conexoes = conexoes_validas(grafo, nome, no)
+
+            if conexoes:
+                operadores_validos.append(nome)
+
+        if np.random.random() < mutation_rate:
+            operador = np.random.choice(operadores_validos)
+            conexoes = conexoes_validas(grafo, operador, no)
+            conexao = np.random.choice(conexoes)
+            filho[indice] = [operador, conexao]
+        else:
+            saida = np.random.randint(1, len(filho)-1)
+            filho[-1] = ["out", saida]
+        
+        grafo_novo = construcao_grafo(filho)
+
+        if verificacao_tipos(filho[:-1], grafo_novo):
+            return filho,
 
 def clahe(imagem):
     clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
@@ -221,18 +282,36 @@ def nick(imagem):
     img_b2 = np.where(smear_mask == 255, img_nick, imagem)
     return img_b2
 
-# PRIMITIVAS #
+def sauvola(imagem):
+    ws = 17
+    thresh_sauvola = threshold_sauvola(imagem, window_size=ws, k=0.2)
+    img_sauvola = (imagem > thresh_sauvola).astype("uint8") * 255
+    return img_sauvola
+
+def open_morphology(imagem):
+    kernel = cv.getStructuringElement(cv.MORPH_RECT, (3, 3))
+    return cv.morphologyEx(imagem, cv.MORPH_OPEN, kernel)
+
+def close_morphology(imagem):
+    kernel = cv.getStructuringElement(cv.MORPH_RECT, (3, 3))
+    return cv.morphologyEx(imagem, cv.MORPH_CLOSE, kernel)
+
+# PRIMITIVAS ou FUNÇÕES #
 
 operadores = {
-    "Clahe": {"funcao": clahe, "entrada": [Imagem], "saida": Imagem},
-    "Otsu": {"funcao": otsu, "entrada": [Imagem], "saida": ImagemBinaria},
-    "MultiOtsu": {"funcao": multiotsu, "entrada": [Imagem], "saida": ImagemBinaria},
-    "NickImagem": {"funcao": nick, "entrada": [Imagem], "saida": ImagemBinaria},
-    "NickBinaria": {"funcao": nick, "entrada": [ImagemBinaria], "saida": ImagemBinaria}
+    0: {"funcao": clahe, "entrada": [Imagem], "saida": Imagem},
+    1: {"funcao": otsu, "entrada": [Imagem], "saida": ImagemBinaria},
+    2: {"funcao": multiotsu, "entrada": [Imagem], "saida": ImagemBinaria},
+    3: {"funcao": nick, "entrada": [Imagem], "saida": ImagemBinaria},
+    4: {"funcao": nick, "entrada": [ImagemBinaria], "saida": ImagemBinaria},
+    5: {"funcao": sauvola, "entrada": [Imagem], "saida": ImagemBinaria},
+    6: {"funcao": sauvola, "entrada": [ImagemBinaria], "saida": ImagemBinaria},
+    7: {"funcao": open_morphology, "entrada": [ImagemBinaria], "saida": ImagemBinaria},
+    8: {"funcao": close_morphology, "entrada": [ImagemBinaria], "saida": ImagemBinaria}
 }
 
 
-# FITNESS FUNÇÃO DE AVALIAÇÃO #
+# FITNESS - FUNÇÃO DE AVALIAÇÃO #
 
 # Mminimizar o resultado de erro entre a imagem resultante e a imagem esperada
 creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
@@ -241,24 +320,7 @@ toolbox = base.Toolbox()
 toolbox.register("individual", tools.initIterate, creator.Individuo, gera_individuo)
 toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 
-# INDIVIDUOS #
-algum_no = 0
 
-individuo = [
-    ["Clahe", 0],
-    ["Otsu", 1],
-    ["MultiOtsu", 1],
-    ["NickImagem", 1],
-    ["NickBinaria", 2],
-    ["out", algum_no]
-]
-
-
-# GRAFO CARTESIANO #
-
-grafo = construcao_grafo(individuo)
-
-# comparar saída com objetivo
 
 input, output = [], []
 pasta = 'OriginalImages'
@@ -266,73 +328,13 @@ for image in os.listdir(pasta):
     nome = os.path.splitext(image)[0]
     input.append(f'{pasta}/{image}')
     output.append(f'GTimages/{nome}_estGT.tiff')
-    break
-
-for i, j in list(zip(input, output)):
-    esperado = cv.imread(f'{j}', cv.IMREAD_GRAYSCALE).astype(np.uint8)
-    if verificacao_tipos(individuo[:-1], grafo):
-        v = execucao_individuo(i, individuo, grafo)
-    fitness = fitness_individuo(v, esperado, individuo)
-    print(fitness)
-
-# AVALIAR - EVALUATE # 
-
-individuo = gera_individuo()
-grafo = construcao_grafo(individuo)
-
-
-
-
+    
 toolbox.register("evaluate", avaliar, input=input, output=output)
+    
 
-#população
-
-# criar população
 populacao = toolbox.population(n=2)
 
-
-# MUTACAO #
-# implementar mutação uniforme e depois efemera
-def mutacao(individuo):
-
-    while True:
-
-        filho = creator.Individuo(individuo)
-
-        # índice do gene: 0, 1, 2, 3, 4
-        indice = np.random.randint(0, len(filho)-1)
-
-        # número real do nó: 1, 2, 3, 4, 5
-        no = indice + 1
-
-        grafo = construcao_grafo(filho)
-
-        operadores_validos = []
-
-        for nome in operadores:
-
-            conexoes = conexoes_validas(
-                grafo,
-                nome,
-                no
-            )
-
-            if conexoes:
-                operadores_validos.append(nome)
-
-        saida = np.random.randint(1, len(filho[:-1])+1)
-
-        filho[-1] = ["out", saida]
-
-        grafo_novo = construcao_grafo(filho)
-
-        if verificacao_tipos(filho[:-1], grafo_novo):
-            return filho,
-
 toolbox.register("mutate", mutacao)
-
-
-# EVOLUCAO #
 
 fitness_history = []
 
@@ -341,11 +343,11 @@ for individuo in populacao:
 
 pai = tools.selBest(populacao, 1)[0]
 neutros_geracao = []
-for geracao in range(20):
+for geracao in range(50):
     
     filhos = []
 
-    for i in range(6):
+    for i in range(8):
 
         filho, = toolbox.mutate(pai)
 
@@ -353,15 +355,13 @@ for geracao in range(20):
 
         filhos.append(filho)
 
-    candidatos = [pai] + filhos
-    
+    melhor_filho = tools.selBest(filhos, 1)[0]    
     neutros = sum(1 for f in filhos if f.fitness.values[0] == pai.fitness.values[0])
     print(f"Geração {geracao}: {neutros} indivíduos neutros")
     neutros_geracao.append(neutros)
-    pai = tools.selBest(candidatos, 1)[0]
-    print("PAI:  ", pai)
-    print("FILHO:", filho)
-    print(f"Geração {geracao}: "
+    if melhor_filho.fitness.values[0] <= pai.fitness.values[0]:
+        pai = melhor_filho
+        print(f"Geração {geracao}: "
         f"fitness = {pai.fitness.values[0]}")
     fitness_history.append(pai.fitness.values[0])
 
@@ -369,12 +369,11 @@ for geracao in range(20):
 plt.plot(fitness_history)
 plt.yscale('log')
 plt.xlabel('Geração')
-plt.ylabel('Erro (MAE)')
+plt.ylabel('Erro (MSE)')
 plt.title('Evolução do Fitness')
 plt.savefig("fitness.png", dpi=150)
 
 # MELHOR INDIVÍDUO # 
-# mostrar melhor solução
 
 melhor = pai
 
