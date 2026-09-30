@@ -1,7 +1,12 @@
 import cv2 as cv
 from skimage.filters import threshold_multiotsu, threshold_sauvola
 import numpy as np
+from cgp import Imagem, ImagemBinaria
 
+#ALGORITMO MEMÉTICO NO PARÂMETRO DAS FUNÇÕES
+# A CADA GERAÇÃO PEGAR O ELITE -> MELHOR FILHO X PAI, E OTIMIZA OS PARÂMETROS
+
+#BFGS -: 
 def clahe(imagem):
     clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
     return clahe.apply(imagem)

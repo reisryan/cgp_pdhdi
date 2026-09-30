@@ -15,6 +15,8 @@ from cgpEvolve import CGPEvolve
 
 np.random.seed(1)
 
+
+
 operadores = {
     0: {"funcao": fpi.clahe, "entrada": Imagem, "saida": Imagem},
     1: {"funcao": fpi.otsu, "entrada": Imagem, "saida": ImagemBinaria},
@@ -44,7 +46,7 @@ operadores = {
 
 # CGP
 
-cgp = CGP(1, operadores, 30, 1)
+cgp = CGP(1, operadores, 10, 1)
 executor = CGPExecutor(cgp)
 evolve = CGPEvolve(cgp, executor)
 
@@ -53,7 +55,7 @@ evolve = CGPEvolve(cgp, executor)
 creator.create("FitnessMin", base.Fitness,  weights=(-1.0,))
 creator.create("Individuo", list, fitness=creator.FitnessMin)
 toolbox = base.Toolbox()
-toolbox.register("individual", tools.initIterate, creator.Individuo, cgp.gera_individuo)
+toolbox.register("individual", tools.initIterate, creator.Individuo, cgp.gera_genoma)
 toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 
 input, output = [], []
@@ -75,7 +77,9 @@ for individuo in populacao:
 pai = tools.selBest(populacao, 1)[0]
 neutros_geracao = []
 
-for geracao in range(50):
+
+#SALVAR A CADA 10 GERAÇÕES EM ALGUM ARQUIVO OS INDIVIDUOS, E, A PARTIR DISTO, FAZER OS GRAFOS/GRAFICOS
+for geracao in range(25):
     filhos = []
     for i in range(5): 
         filho, = toolbox.mutate(pai)
@@ -89,13 +93,14 @@ for geracao in range(50):
         pai = melhor_filho
     print(f"Geração {geracao}: " f"fitness = {pai.fitness.values[0]}")
     fitness_history.append(pai.fitness.values[0])
+"""
     plt.plot(fitness_history)
     plt.yscale('log')
     plt.xlabel('Geração x Indivíduos')
     plt.ylabel('Erro (MSE)')
     plt.title('Evolução do Fitness')
     plt.savefig("fitness.png", dpi=150)
-
+"""
 
 # MELHOR INDIVÍDUO #
 melhor = pai
@@ -103,7 +108,7 @@ print("MELHOR INDIVÍDUO:")
 print(melhor)
 print("FITNESS:")
 print(melhor.fitness.values)
-"""cgp.exibir_grafo(
+cgp.exibir_grafo(cgp,
     melhor,
     salvar="melhor_grafo.png"
-)"""
+)
