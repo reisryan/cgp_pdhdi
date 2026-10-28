@@ -44,23 +44,25 @@ operadores = {
     # subtração de 2 imagens
 }
 
-
+cgp = None
 
 def avaliar_imagem(imagepath, outputpath, n_geracoes, n_lambda, nos, levels_back, nos_por_camada):
-    cgp = CGP(1, operadores, nos, 1, levels_back, nos_por_camada)
-    executor = CGPExecutor(cgp)
-    evolve = CGPEvolve(cgp, executor)
-    creator.create("FitnessMax", base.Fitness,  weights=(1.0,))
-    creator.create("Individuo", list, fitness=creator.FitnessMax)
-    toolbox = base.Toolbox()
-    toolbox.register("individual", tools.initIterate, creator.Individuo, cgp.gera_genoma)
-    toolbox.register("population", tools.initRepeat, list, toolbox.individual)
-    toolbox.register("mutate", evolve.mutacao)
+    global cgp
+    if cgp is None:
+        cgp = CGP(1, operadores, nos, 1, levels_back, nos_por_camada)
+        executor = CGPExecutor(cgp)
+        evolve = CGPEvolve(cgp, executor)
+        creator.create("FitnessMax", base.Fitness,  weights=(1.0,))
+        creator.create("Individuo", list, fitness=creator.FitnessMax)
+        toolbox = base.Toolbox()
+        toolbox.register("individual", tools.initIterate, creator.Individuo, cgp.gera_genoma)
+        toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+        toolbox.register("mutate", evolve.mutacao)
     toolbox.register("evaluate", evolve.avaliar, inputs=[imagepath], outputs=[outputpath])
     pai = toolbox.individual()
     pai.fitness.values = toolbox.evaluate(pai)
 
-    hist_geracao, hist_pai, hist_lambda = [], [], []
+    hist_pai, hist_lambda = [], []
     for geracao in range(1, n_geracoes+1):
         filhos, melhores = [], []
         for l in range(n_lambda):
@@ -78,12 +80,11 @@ def avaliar_imagem(imagepath, outputpath, n_geracoes, n_lambda, nos, levels_back
             pai = random.choice(neutros)
 
         print(f"Geração {geracao}: FITNESS, pai: {pai.fitness.values[0]}, filhos: {[int(f.fitness.values[0]) for f in filhos]}")
+        print(f"nos ativos: {evolve.stats['nos_ativos']}, mutações válidas: {evolve.stats['validas']}, mutações descartadas: {evolve.stats['descartadas']} \n mutações em nós: {evolve.stats['mut_no']}, mutações em arestas: {evolve.stats['mut_aresta']}, mutações em saídas: {evolve.stats['mut_saida']}, mutações em nós ativos: {evolve.stats['mut_ativa']}, mutações em nós inativos: {evolve.stats['mut_inativa']}")
         print(f"Média fitness = {sum([f.fitness.values[0] for f in filhos]) / len(filhos)}")
-        hist_pai.append(float(pai.fitness.values[0]))
-        hist_lambda.append([float(f.fitness.values[0]) for f in filhos])
-
         if geracao % 10 == 0:
-            hist_geracao.append((geracao, hist_pai, hist_lambda))
+            hist_pai.append(float(pai.fitness.values[0]))
+            hist_lambda.append([float(f.fitness.values[0]) for f in filhos])
             
     return pai.fitness.values[0], pai, hist_pai, hist_lambda
 
@@ -100,8 +101,8 @@ def main():
     nos = int(args[3])
     levels_back = int(args[4])
     nos_por_camada = int(args[5])
-    imagepath = args[6]
-    gtpath = args[7]
+    imagepath = args[6] # forma de executar todas de uma vez
+    gtpath = args[7] # forma de executar todas de uma vez
 
 
     fit_geral = 0

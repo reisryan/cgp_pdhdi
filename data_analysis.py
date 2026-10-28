@@ -41,21 +41,10 @@ def main():
 
     if sys.argv[1] == "graphic":
         hist_file = sys.argv[2]
-        with open(hist_file, "r") as f:
-            lines = f.readlines()
-            hist_pai = []
-            hist_lambda = []
-            for line in lines:
-                if line.startswith("Pai:"):
-                    pais = (line.split(":")[1].strip())
-                    for i in pais.split(","):
-                        hist_pai.append(float(i))
-
-                elif line.startswith("Filhos:"):
-                    filhos_str = line.split(":")[1].strip().strip("[]")
-                    filhos_list = [float(x) for x in filhos_str.split(",") if x]
-                    hist_lambda.append(filhos_list)
-        nome_arquivo = f"{hist_file.split('.')[0]}_graphic"
+        hist_pai, hist_lambda = [], []
+        lines = open(hist_file, "r").readlines()
+        nome_arquivo = hist_file.split(".")[0]
+            
         grafico(hist_pai, hist_lambda, nome_arquivo)
 
 if __name__ == "__main__":
