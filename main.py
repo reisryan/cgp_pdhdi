@@ -44,80 +44,195 @@ operadores = {
     # subtração de 2 imagens
 }
 
-cgp = None
-
 def avaliar_imagem(imagepath, outputpath, n_geracoes, n_lambda, nos, levels_back, nos_por_camada):
     global cgp
-    if cgp is None:
-        cgp = CGP(1, operadores, nos, 1, levels_back, nos_por_camada)
-        executor = CGPExecutor(cgp)
-        evolve = CGPEvolve(cgp, executor)
-        creator.create("FitnessMax", base.Fitness,  weights=(1.0,))
+
+    cgp = CGP(1, operadores, nos, 1, levels_back, nos_por_camada)
+    executor = CGPExecutor(cgp)
+    evolve = CGPEvolve(cgp, executor)
+
+    if not hasattr(creator, "FitnessMax"):
+        creator.create("FitnessMax", base.Fitness, weights=(1.0,))
+    if not hasattr(creator, "Individuo"):
         creator.create("Individuo", list, fitness=creator.FitnessMax)
-        toolbox = base.Toolbox()
-        toolbox.register("individual", tools.initIterate, creator.Individuo, cgp.gera_genoma)
-        toolbox.register("population", tools.initRepeat, list, toolbox.individual)
-        toolbox.register("mutate", evolve.mutacao)
+
+    toolbox = base.Toolbox()
+    toolbox.register("individual", tools.initIterate, creator.Individuo, cgp.gera_genoma)
+    toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+    toolbox.register("mutate", evolve.mutacao)
     toolbox.register("evaluate", evolve.avaliar, inputs=[imagepath], outputs=[outputpath])
+
     pai = toolbox.individual()
     pai.fitness.values = toolbox.evaluate(pai)
 
-    hist_pai, hist_lambda = [], []
-    for geracao in range(1, n_geracoes+1):
+    hist_pai, hist_lambda, hist_stats = [], [], []
+
+    for geracao in range(1, n_geracoes + 1):
         filhos, melhores = [], []
+
         for l in range(n_lambda):
             filho, = toolbox.mutate(pai)
             filho.fitness.values = toolbox.evaluate(filho)
             filhos.append(filho)
+
             if filho.fitness.values[0] > pai.fitness.values[0]:
                 melhores.append(filho)
-        neutros = [f for f in filhos if f.fitness.values[0] == pai.fitness.values[0]]
 
+        neutros = [
+            f for f in filhos
+            if f.fitness.values[0] == pai.fitness.values[0]
+        ]
 
-        if len(melhores) > 0:
+        if melhores:
             pai = random.choice(melhores)
-        elif len(melhores) == 0 and len(neutros) > 0:
+        elif neutros:
             pai = random.choice(neutros)
 
-        print(f"Geração {geracao}: FITNESS, pai: {pai.fitness.values[0]}, filhos: {[int(f.fitness.values[0]) for f in filhos]}")
-        print(f"nos ativos: {evolve.stats['nos_ativos']}, mutações válidas: {evolve.stats['validas']}, mutações descartadas: {evolve.stats['descartadas']} \n mutações em nós: {evolve.stats['mut_no']}, mutações em arestas: {evolve.stats['mut_aresta']}, mutações em saídas: {evolve.stats['mut_saida']}, mutações em nós ativos: {evolve.stats['mut_ativa']}, mutações em nós inativos: {evolve.stats['mut_inativa']}")
-        print(f"Média fitness = {sum([f.fitness.values[0] for f in filhos]) / len(filhos)}")
+        print(
+            f"Geração {geracao}: FITNESS, pai: {pai.fitness.values[0]}, "
+            f"filhos: {[float(f.fitness.values[0]) for f in filhos]}"
+        )
+        print(
+            f"nos ativos: {evolve.stats['nos_ativos']}, "
+            f"mutações válidas: {evolve.stats['validas']}, "
+            f"mutações descartadas: {evolve.stats['descartadas']} \n"
+            f"mutações em nós: {evolve.stats['mut_no']}, "
+            f"mutações em arestas: {evolve.stats['mut_aresta']}, "
+            f"mutações em saídas: {evolve.stats['mut_saida']}, "
+            f"mutações em nós ativos: {evolve.stats['mut_ativa']}, "
+            f"mutações em nós inativos: {evolve.stats['mut_inativa']}"
+        )
+        print(
+            f"Média fitness = "
+            f"{sum(f.fitness.values[0] for f in filhos) / len(filhos)}"
+        )
+
         if geracao % 10 == 0:
             hist_pai.append(float(pai.fitness.values[0]))
-            hist_lambda.append([float(f.fitness.values[0]) for f in filhos])
-            
-    return pai.fitness.values[0], pai, hist_pai, hist_lambda
+            hist_lambda.append(
+                [float(f.fitness.values[0]) for f in filhos]
+            )
+            hist_stats.append(dict(evolve.stats))
 
+    return pai.fitness.values[0], pai, hist_pai, hist_lambda, hist_stats
 
 
 def main():
     if len(sys.argv) < 8:
-        print("Uso: python main.py <iteracoes> <geracoes> <lambda> <nos> <levels_back> <nos_por_camada> <imagepath> <gtpath>")
+        print(
+            "Uso: python main.py <iteracoes> <geracoes> <lambda> "
+            "<nos> <levels_back> <nos_por_camada> <imagepath> <gtpath>"
+        )
         sys.exit(1)
+
     args = sys.argv[1:]
-    iter = int(args[0])
+    iteracoes = int(args[0])
     geracoes = int(args[1])
     arglambda = int(args[2])
     nos = int(args[3])
     levels_back = int(args[4])
     nos_por_camada = int(args[5])
-    imagepath = args[6] # forma de executar todas de uma vez
-    gtpath = args[7] # forma de executar todas de uma vez
+    imagepath = args[6]
+    gtpath = args[7]
 
+    pares_imagens = []
 
-    fit_geral = 0
-    h_g = []
-    for i in range(iter):
-        print(f"Iteração {i + 1}/{iter}")
-        f, p, hp, hl = avaliar_imagem('OriginalImages/' + imagepath, 'GTimages/' + gtpath, geracoes, arglambda, nos, levels_back, nos_por_camada)
-        file = open(f"{imagepath}_result.txt", "a")
-        file.write(f"Pai: {hp}\n")
-        file.write(f"Filhos: {hl}\n")
-        file.write("\n")
-        file.close()
-        fit_geral += f
-    print(f"Fitness médio após {iter} iterações: {fit_geral / iter}")
-    
+    if imagepath.lower() == "all" and gtpath.lower() == "all":
+        import re
+
+        pasta_original = "OriginalImages"
+        pasta_gt = "GTimages"
+
+        for nome in sorted(os.listdir(pasta_original)):
+            correspondencia = re.fullmatch(
+                r"((?:HW|PR)\d{2})_dibco2013\.(?:bmp|tif|tiff)",
+                nome,
+                re.IGNORECASE
+            )
+
+            if correspondencia:
+                identificador = correspondencia.group(1)
+                nome_gt = f"{identificador}_estGT_dibco2013.tiff"
+                caminho_gt = os.path.join(pasta_gt, nome_gt)
+
+                if os.path.isfile(caminho_gt):
+                    pares_imagens.append(
+                        (
+                            os.path.join(pasta_original, nome),
+                            caminho_gt,
+                            identificador
+                        )
+                    )
+
+        if not pares_imagens:
+            print("Nenhum par de imagens correspondente foi encontrado.")
+            sys.exit(1)
+
+    elif imagepath.lower() == "all" or gtpath.lower() == "all":
+        print("Para executar todas as imagens, informe all all.")
+        sys.exit(1)
+
+    else:
+        identificador = os.path.basename(imagepath).split("_dibco2013")[0]
+        pares_imagens.append(
+            (
+                os.path.join("OriginalImages", imagepath),
+                os.path.join("GTimages", gtpath),
+                identificador
+            )
+        )
+
+    for caminho_imagem, caminho_gt, identificador in pares_imagens:
+        if not os.path.isfile(caminho_imagem):
+            print(f"Imagem não encontrada: {caminho_imagem}")
+            continue
+
+        if not os.path.isfile(caminho_gt):
+            print(f"Ground truth não encontrado: {caminho_gt}")
+            continue
+
+        arquivo_resultado = f"{identificador}_result.txt"
+        fit_geral = 0
+
+        print(f"\nImagem: {identificador}")
+
+        with open(arquivo_resultado, "a", encoding="utf-8") as arquivo:
+            for i in range(iteracoes):
+                print(f"Iteração {i + 1}/{iteracoes}")
+
+                f, p, hp, hl, hs = avaliar_imagem(
+                    caminho_imagem,
+                    caminho_gt,
+                    geracoes,
+                    arglambda,
+                    nos,
+                    levels_back,
+                    nos_por_camada
+                )
+
+                fit_geral += f
+
+                for indice, stats in enumerate(hs):
+                    geracao_checkpoint = (indice + 1) * 10
+
+                    arquivo.write(f"Iteração {i + 1}: geração {geracao_checkpoint}\n")
+                    arquivo.write(f"Histórico pai: {hp[:indice + 1]}\n")
+                    arquivo.write(f"Histórico lambda: {hl[:indice + 1]}\n")
+                    arquivo.write("evolve.stats:\n")
+                    for atributo, valor in stats.items():
+                        arquivo.write(f"{atributo}: {valor}\n")
+                    arquivo.write("\n")
+                arquivo.flush()
+            arquivo.write(
+                f"Fitness médio após {iteracoes} iterações: "
+                f"{fit_geral / iteracoes}\n\n"
+            )
+
+        print(
+            f"Fitness médio de {identificador} após {iteracoes} iterações: "
+            f"{fit_geral / iteracoes}"
+        )
+        print(f"Resultados salvos em {arquivo_resultado}")
     
 if __name__ == "__main__":
     main()
