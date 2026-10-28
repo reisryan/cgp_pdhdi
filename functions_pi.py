@@ -19,9 +19,123 @@ def otsu(imagem):
     _, imgbin = cv.threshold(imagem, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
     return imgbin
 
+def otsu_method(hist):
+    num_bins = hist.shape[0]
+    total = hist.sum()
+    sum_total = np.dot(np.arange(num_bins), hist)
+    weight_background = 0.0
+    sum_background = 0.0
+    optimum_value = 0
+    maximum = -np.inf
+    for t in range(num_bins):
+        weight_background += hist[t]
+        if weight_background == 0:
+            continue
+        weight_foreground = total - weight_background
+        if weight_foreground == 0:
+            break
+
+        sum_background += t * hist[t]
+        mean_foreground = (
+            sum_total - sum_background
+        ) / weight_foreground
+        mean_background = sum_background / weight_background
+
+        variance = (
+            weight_background
+            * weight_foreground
+            * (mean_background - mean_foreground) ** 2
+        )
+
+        if variance > maximum:
+            optimum_value = t
+            maximum = variance
+
+    return optimum_value, maximum
+
+def TSMO(imagem):
+    """Modified Two-Stage Multithreshold Otsu Method."""
+
+    M, L = 32, 256
+    hist = np.bincount(imagem.ravel(), minlength=L)
+    N = L // M
+
+    # Histograma agrupado e normalizado
+    norm_hist = np.zeros(M, dtype=np.float32)
+
+    for i in range(M):
+        norm_hist[i] = hist[i * N:(i + 1) * N].sum()
+
+    if norm_hist.max() > 0:
+        norm_hist = (norm_hist / norm_hist.max()) * 100
+
+    # Estimativa dos vales
+    probs = np.zeros(M, dtype=int)
+    costs = np.zeros(M, dtype=float)
+
+    for i in range(1, M - 1):
+        if norm_hist[i] > norm_hist[i - 1] or norm_hist[i] > norm_hist[i + 1]:
+            probs[i] = 0
+        elif norm_hist[i] < norm_hist[i - 1] and norm_hist[i] == norm_hist[i + 1]:
+            probs[i] = 1
+            costs[i] = norm_hist[i - 1] - norm_hist[i]
+        elif norm_hist[i] == norm_hist[i - 1] and norm_hist[i] < norm_hist[i + 1]:
+            probs[i] = 3
+            costs[i] = norm_hist[i + 1] - norm_hist[i]
+        elif norm_hist[i] < norm_hist[i - 1] and norm_hist[i] < norm_hist[i + 1]:
+            probs[i] = 4
+            costs[i] = norm_hist[i - 1] + norm_hist[i + 1] - 2 * norm_hist[i]
+        elif norm_hist[i] == norm_hist[i - 1] and norm_hist[i] == norm_hist[i + 1]:
+            probs[i] = probs[i - 1]
+            costs[i] = probs[i - 1]
+
+    for i in range(1, M - 1):
+        if probs[i] != 0:
+            probs[i] = (probs[i - 1] + probs[i] + probs[i + 1]) // 4
+
+    valleys = np.where(probs > 0)[0].tolist()
+
+    # Otsu nas regiões dos vales
+    thresholds = []
+
+    for valley in valleys:
+        start_pos = max(0, valley * N - N)
+        end_pos = min(L, (valley + 2) * N)
+        regional_hist = hist[start_pos:end_pos]
+
+        if regional_hist.size == 0 or regional_hist.sum() == 0:
+            continue
+
+        sub_threshold, variance = otsu_method(regional_hist)
+        thresholds.append((start_pos + sub_threshold, variance))
+
+       # Ordena os limiares pela intensidade, em ordem crescente.
+    thresholds.sort(key=lambda x: x[0])
+    limiares = [int(t) for t, _ in thresholds]
+
+    # TO1: menor limiar; TO2: segundo menor limiar.
+    if len(limiares) >= 2:
+        TO1 = limiares[0]
+        TO2 = limiares[1]
+    elif len(limiares) == 1:
+        TO1 = limiares[0]
+        TO2 = TO1
+    else:
+        TO1, _ = cv.threshold(
+            imagem, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU
+        )
+        TO2 = int(TO1)
+
+    # A função retorna a imagem binarizada por TO2 e os limiares.
+    _, imagem_binarizada = cv.threshold(
+        imagem, TO2, 255, cv.THRESH_BINARY
+    )
+
+    return imagem_binarizada
+
 def multiotsu(imagem):
-    lim = limiares(imagem)
-    _, imgbin = cv.threshold(imagem, lim[0], 255, cv.THRESH_BINARY)
+    #lim = limiares(imagem)
+    _, imgbin = cv.threshold(imagem, 5, 255, cv.THRESH_BINARY)
     return imgbin
 
 def nick(imagem):

@@ -26,16 +26,29 @@ class CGPExecutor:
             to_verify.append(conexao)
         return nodes_enabled
 
+    def view_structure(self, genoma):
+        self.cgp.genoma = genoma
+        nodes_enabled = self.nos_ativos()
+        
+        for i in range(self.cgp.n_entradas, self.cgp.n_entradas + self.cgp.n_nos):
+            if i not in nodes_enabled:
+                continue
+            gene = genoma[i]
+            operador_id = gene[0]
+            conexao = gene[1]
+            print(f"Nó {i}: Operador {operador_id}, Conexão {conexao}")
+            print(f"Função: {self.cgp.funcoes[operador_id]["funcao"].__name__}")
+        print(f"Saídas: {genoma[-self.cgp.n_saidas:]}")
+
+
     def executar(self, arquivo): #grafo
         OUTPUTS = {}
 
         OUTPUTS[0] = cv.imread(arquivo, cv.IMREAD_GRAYSCALE).astype("uint8")
         nodes_ativos = self.nos_ativos()
 
-        for no in range(self.cgp.n_entradas,self.cgp.n_entradas+self.cgp.n_nos): #:
-            if no < self.cgp.n_entradas:
-                continue
-            if no not in nodes_ativos:
+        for no in range(self.cgp.n_entradas,self.cgp.n_entradas+self.cgp.n_nos):
+            if (no < self.cgp.n_entradas) or (no not in nodes_ativos):
                 continue
 
             gene = self.cgp.genoma[no]
