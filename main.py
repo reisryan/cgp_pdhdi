@@ -79,11 +79,11 @@ def avaliar_imagem(imagepath, outputpath, n_geracoes, n_lambda, nos, levels_back
 
         print(f"Geração {geracao}: FITNESS, pai: {pai.fitness.values[0]}, filhos: {[int(f.fitness.values[0]) for f in filhos]}")
         print(f"Média fitness = {sum([f.fitness.values[0] for f in filhos]) / len(filhos)}")
-        hist_pai.append(pai.fitness.values[0])
-        hist_lambda.append([f.fitness.values[0] for f in filhos])
+        hist_pai.append(float(pai.fitness.values[0]))
+        hist_lambda.append([float(f.fitness.values[0]) for f in filhos])
 
-        if geracao != 0 and geracao % 10 == 0:
-            hist_geracao.append([hist_pai, hist_lambda])
+        if geracao % 10 == 0:
+            hist_geracao.append((geracao, hist_pai, hist_lambda))
             
     return pai.fitness.values[0], pai, hist_pai, hist_lambda
 
@@ -105,46 +105,18 @@ def main():
 
 
     fit_geral = 0
+    h_g = []
     for i in range(iter):
         print(f"Iteração {i + 1}/{iter}")
-        f, p, h, hl = avaliar_imagem(imagepath, gtpath, geracoes, arglambda, nos, levels_back, nos_por_camada)
+        f, p, hp, hl = avaliar_imagem('OriginalImages/' + imagepath, 'GTimages/' + gtpath, geracoes, arglambda, nos, levels_back, nos_por_camada)
+        file = open(f"{imagepath}_result.txt", "a")
+        file.write(f"Pai: {hp}\n")
+        file.write(f"Filhos: {hl}\n")
+        file.write("\n")
+        file.close()
         fit_geral += f
     print(f"Fitness médio após {iter} iterações: {fit_geral / iter}")
-"""som += f
-#SALVAR O GENOMA DO PAI E DOS FILHOS A CADA 10 GERAÇÕES
-f, p, h, hl = avaliar_imagem('OriginalImages/HW02_dibco2013.bmp', 'GTimages/HW02_estGT_dibco2013.tiff', n_geracoes=100, n_lambda=5)
-som += f
-f, p, h, hl = avaliar_imagem('OriginalImages/HW03_dibco2013.bmp', 'GTimages/HW03_estGT_dibco2013.tiff', n_geracoes=100, n_lambda=5)
-som += f
-f, p, h, hl = avaliar_imagem('OriginalImages/HW04_dibco2013.bmp', 'GTimages/HW04_estGT_dibco2013.tiff', n_geracoes=100, n_lambda=5)
-som += f
-f, p, h, hl = avaliar_imagem('OriginalImages/HW05_dibco2013.bmp', 'GTimages/HW05_estGT_dibco2013.tiff', n_geracoes=100, n_lambda=5)
-som += f
-f, p, h, hl = avaliar_imagem('OriginalImages/HW06_dibco2013.tiff', 'GTimages/HW06_estGT_dibco2013.tiff', n_geracoes=100, n_lambda=5)
-som += f
-f, p, h, hl = avaliar_imagem('OriginalImages/HW07_dibco2013.bmp', 'GTimages/HW07_estGT_dibco2013.tiff', n_geracoes=100, n_lambda=5)
-som += f
-f, p, h, hl = avaliar_imagem('OriginalImages/HW08_dibco2013.tiff', 'GTimages/HW08_estGT_dibco2013.tiff', n_geracoes=100, n_lambda=5)
-som += f
-f, p, h, hl = avaliar_imagem('OriginalImages/PR01_dibco2013.bmp', 'GTimages/PR01_estGT_dibco2013.tiff', n_geracoes=100, n_lambda=5)
-som += f
-f, p, h, hl = avaliar_imagem('OriginalImages/PR02_dibco2013.bmp', 'GTimages/PR02_estGT_dibco2013.tiff', n_geracoes=100, n_lambda=5)
-som += f
-f, p, h, hl = avaliar_imagem('OriginalImages/PR03_dibco2013.bmp', 'GTimages/PR03_estGT_dibco2013.tiff', n_geracoes=100, n_lambda=5)
-som += f
-f, p, h, hl = avaliar_imagem('OriginalImages/PR04_dibco2013.bmp', 'GTimages/PR04_estGT_dibco2013.tiff', n_geracoes=100, n_lambda=5)
-som += f
-f, p, h, hl = avaliar_imagem('OriginalImages/PR05_dibco2013.bmp', 'GTimages/PR05_estGT_dibco2013.tiff', n_geracoes=100, n_lambda=5)
-som += f
-f, p, h, hl = avaliar_imagem('OriginalImages/PR06_dibco2013.bmp', 'GTimages/PR06_estGT_dibco2013.tiff', n_geracoes=100, n_lambda=5)
-som += f
-f, p, h, hl = avaliar_imagem('OriginalImages/PR07_dibco2013.bmp', 'GTimages/PR07_estGT_dibco2013.tiff', n_geracoes=100, n_lambda=5)
-som += f
-f, p, h, hl = avaliar_imagem('OriginalImages/PR08_dibco2013.bmp', 'GTimages/PR08_estGT_dibco2013.tiff', n_geracoes=100, n_lambda=5)
-som += f
-print(f"Somatório dos resultados: {som}")
-print(f"Média dos resultados: {som/16}")
-grafico(h, hl, 'PR08_dibco2013')
-"""
+    
+    
 if __name__ == "__main__":
     main()

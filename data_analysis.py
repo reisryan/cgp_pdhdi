@@ -7,7 +7,7 @@ def grafico(hist_pai, hist_lambda, nome_arquivo):
     plt.plot(hist_pai, label='Melhor indivíduo da geração', color='blue')
     plt.xlabel('Geração')
     plt.ylabel('Fitness')
-    plt.title('Evolução do Melhor Indivíduo')
+    plt.title('Evolução do Melhor Indivíduo') ## grafico com todas as n iteraçoes, e pegar a media de cada ponto de cada iteraçao
     plt.legend()
     plt.grid()
     plt.savefig(f"{nome_arquivo}.png")
@@ -37,14 +37,25 @@ def grafico(hist_pai, hist_lambda, nome_arquivo):
 
 def main():
     if len(sys.argv) < 3:
-        print("Uso: python3 data_analysis.py graphic <hist_pai> <hist_lambda> or \n python3 data_analysis.py graph <genoma> or \n or python3 data_analysis.py images [sequence of functions] image gtpath")
+        print("Uso: python3 data_analysis.py graphic <hist_file> or \n python3 data_analysis.py graph <genoma> or \n or python3 data_analysis.py images [sequence of functions] image gtpath")
 
     if sys.argv[1] == "graphic":
-        hist_pai_file = sys.argv[2]
-        hist_lambda_file = sys.argv[3]
-        hist_pai = np.load(hist_pai_file)
-        hist_lambda = np.load(hist_lambda_file)
-        nome_arquivo = f"{hist_pai_file.split('.')[0]}_graphic"
+        hist_file = sys.argv[2]
+        with open(hist_file, "r") as f:
+            lines = f.readlines()
+            hist_pai = []
+            hist_lambda = []
+            for line in lines:
+                if line.startswith("Pai:"):
+                    pais = (line.split(":")[1].strip())
+                    for i in pais.split(","):
+                        hist_pai.append(float(i))
+
+                elif line.startswith("Filhos:"):
+                    filhos_str = line.split(":")[1].strip().strip("[]")
+                    filhos_list = [float(x) for x in filhos_str.split(",") if x]
+                    hist_lambda.append(filhos_list)
+        nome_arquivo = f"{hist_file.split('.')[0]}_graphic"
         grafico(hist_pai, hist_lambda, nome_arquivo)
 
 if __name__ == "__main__":
