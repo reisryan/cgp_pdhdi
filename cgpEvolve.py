@@ -43,13 +43,15 @@ class CGPEvolve:
         filho = CGP(self.cgp.n_entradas, self.cgp.funcoes, self.cgp.n_nos, self.cgp.n_saidas, self.cgp.levels_back, self.cgp.nos_por_camada)
         filho.genoma = type(individuo)([gene.copy() for gene in individuo])
         fe = CGPExecutor(filho)
+        stats = {"nos_ativos":len(fe.nos_ativos()), "tentativas":0, "descartadas":0, "validas":0, "mut_no":0, "mut_aresta":0, "mut_saida":0, "mut_ativa":0, "mut_inativa":0}
 
         while not mutate_active_node:
             nos_ativos = fe.nos_ativos()
             rnd = np.random.random()
+            stats["tentativas"] += 1
 
             #PASSO A MAIS COMUM NA MUTAÇÃO: WHILE TRUE ATÉ TROCAR UM NÓ ATIVO
-            #CUMULAÇÃO DE MUTAÇÃO X SEM CUMULAÇÃO (RESET QUANDO TROCA UM NÃO-ATIVO)
+            #CUMULAÇÃO DE MUTAÇÃO X SEM CUMULAÇÃO (RESET QUANDO TROCA UM NÃO-ATIVO) [ESTÁ CUMULANDO MUTACOES]
     
             #if rnd < 1/4: #MUTAÇÃO DOS NÓS DE ENTRADA 
             #    indice = np.random.randint(0, filho.n_entradas)
@@ -68,6 +70,7 @@ class CGPEvolve:
                 if operadores_validos:
                     operador = np.random.choice(operadores_validos)
                     filho.genoma[no][0] = operador
+                    stats["mut_no"] += 1
                     mutate_active_node = no in nos_ativos
             elif rnd < 2/3:
                 ### MUTAÇÃO DAS ARESTAS ###
@@ -79,6 +82,7 @@ class CGPEvolve:
                 if conexoes:
                     conexao = np.random.choice(conexoes)
                     filho.genoma[no][1] = conexao
+                    stats["mut_aresta"] += 1
                     mutate_active_node = no in nos_ativos
             else:
                 ### MUTAÇÃO DAS SAÍDAS ###
@@ -87,9 +91,20 @@ class CGPEvolve:
                 no = np.random.randint(filho.n_entradas, filho.n_entradas + filho.n_nos)
                 if no != no_atual:
                     filho.genoma[indice][1] = no
+                    stats["mut_saida"] += 1
                 mutate_active_node = no not in nos_ativos
                 
 
             if mutate_active_node and filho.verificacao_tipos(filho.genoma):
+                stats["validas"] += 1
+                stats["mut_ativa"] += 1
+                stats["nos_ativos"] = len(fe.nos_ativos())
                 return filho.genoma,
+            if not mutate_active_node and filho.verificacao_tipos(filho.genoma):
+                stats["validas"] += 1
+                stats["mut_inativa"] += 1
+                stats["nos_ativos"] = len(fe.nos_ativos())
+            if not filho.verificacao_tipos(filho.genoma):
+                stats["descartadas"] += 1
+                
             mutate_active_node = False

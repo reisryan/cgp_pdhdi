@@ -1,5 +1,6 @@
 from deap import base, creator, tools
 
+import sys
 import numpy as np
 import matplotlib
 import random
@@ -12,7 +13,6 @@ from cgp import CGP, Imagem, ImagemBinaria
 from cgpExecutor import CGPExecutor
 from cgpEvolve import CGPEvolve
 
-np.random.seed(1)
 
 operadores = {
     1: {"funcao": fpi.clahe, "entrada": Imagem, "saida": Imagem},
@@ -44,78 +44,74 @@ operadores = {
     # subtração de 2 imagens
 }
 
-# CGP
-cgp = CGP(1, operadores, 30, 1, 2, 5)
-executor = CGPExecutor(cgp)
-evolve = CGPEvolve(cgp, executor)
-
-# DEAP
-creator.create("FitnessMax", base.Fitness,  weights=(1.0,))
-creator.create("Individuo", list, fitness=creator.FitnessMax)
-toolbox = base.Toolbox()
-toolbox.register("individual", tools.initIterate, creator.Individuo, cgp.gera_genoma)
-toolbox.register("population", tools.initRepeat, list, toolbox.individual)
-toolbox.register("mutate", evolve.mutacao)
-
-input, output = [], []
-pasta = 'OriginalImages'
 
 
-def avaliar_imagem(imagepath, outputpath, n_geracoes=50, n_lambda=5):
+def avaliar_imagem(imagepath, outputpath, n_geracoes, n_lambda, nos, levels_back, nos_por_camada):
+    cgp = CGP(1, operadores, nos, 1, levels_back, nos_por_camada)
+    executor = CGPExecutor(cgp)
+    evolve = CGPEvolve(cgp, executor)
+    creator.create("FitnessMax", base.Fitness,  weights=(1.0,))
+    creator.create("Individuo", list, fitness=creator.FitnessMax)
+    toolbox = base.Toolbox()
+    toolbox.register("individual", tools.initIterate, creator.Individuo, cgp.gera_genoma)
+    toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+    toolbox.register("mutate", evolve.mutacao)
     toolbox.register("evaluate", evolve.avaliar, inputs=[imagepath], outputs=[outputpath])
     pai = toolbox.individual()
     pai.fitness.values = toolbox.evaluate(pai)
 
     hist_geracao, hist_pai, hist_lambda = [], [], []
     for geracao in range(1, n_geracoes+1):
-        filhos = []
+        filhos, melhores = [], []
         for l in range(n_lambda):
             filho, = toolbox.mutate(pai)
             filho.fitness.values = toolbox.evaluate(filho)
             filhos.append(filho)
+            if filho.fitness.values[0] > pai.fitness.values[0]:
+                melhores.append(filho)
+        neutros = [f for f in filhos if f.fitness.values[0] == pai.fitness.values[0]]
 
-        melhor = tools.selBest(filhos, 1)[0]
-        if melhor.fitness.values[0] >= pai.fitness.values[0]: # mse <=, pnsr >=
-            neutros = [f for f in filhos if f.fitness.values[0] == pai.fitness.values[0]]
-            pai = random.choice(neutros) if neutros else melhor
 
-        print(f"Geração {geracao + 1}: Melhor fitness = {pai.fitness.values[0]}")
+        if len(melhores) > 0:
+            pai = random.choice(melhores)
+        elif len(melhores) == 0 and len(neutros) > 0:
+            pai = random.choice(neutros)
+
+        print(f"Geração {geracao}: FITNESS, pai: {pai.fitness.values[0]}, filhos: {[int(f.fitness.values[0]) for f in filhos]}")
         print(f"Média fitness = {sum([f.fitness.values[0] for f in filhos]) / len(filhos)}")
         hist_pai.append(pai.fitness.values[0])
         hist_lambda.append([f.fitness.values[0] for f in filhos])
 
         if geracao != 0 and geracao % 10 == 0:
-            hist_geracao.append(hist_pai)
-            nome_arquivo = f"{os.path.basename(imagepath).split('.')[0]}_geracao_{geracao + 1}"
-            grafico(hist_pai, hist_lambda, nome_arquivo)
-
+            hist_geracao.append([hist_pai, hist_lambda])
+            
     return pai.fitness.values[0], pai, hist_pai, hist_lambda
 
-def grafico(hist_pai, hist_lambda, nome_arquivo):
-    plt.figure(figsize=(10, 5))
-    plt.plot(hist_pai, label='Melhor indivíduo da geração', color='blue')
-    plt.xlabel('Geração')
-    plt.ylabel('Fitness')
-    plt.title('Evolução do Melhor Indivíduo')
-    plt.legend()
-    plt.grid()
-    plt.savefig(f"{nome_arquivo}.png")
-    plt.close()
 
-    plt.figure(figsize=(10, 5))
-    for i in range(len(hist_lambda[0])):
-        plt.plot([hist_lambda[j][i] for j in range(len(hist_lambda))], label=f'Filho {i + 1}')
-    plt.xlabel('Geração')
-    plt.ylabel('Fitness')
-    plt.title('Evolução dos Filhos da Geração')
-    plt.legend()
-    plt.grid()
-    plt.savefig(f"{nome_arquivo}_filhos.png")
-    plt.close()
 
-#som = 0
-f, p, h, hl = avaliar_imagem('OriginalImages/HW01_dibco2013.bmp', 'GTimages/HW01_estGT_dibco2013.tiff', n_geracoes=50, n_lambda=5)
+def main():
+    if len(sys.argv) < 8:
+        print("Uso: python main.py <iteracoes> <geracoes> <lambda> <nos> <levels_back> <nos_por_camada> <imagepath> <gtpath>")
+        sys.exit(1)
+    args = sys.argv[1:]
+    iter = int(args[0])
+    geracoes = int(args[1])
+    arglambda = int(args[2])
+    nos = int(args[3])
+    levels_back = int(args[4])
+    nos_por_camada = int(args[5])
+    imagepath = args[6]
+    gtpath = args[7]
+
+
+    fit_geral = 0
+    for i in range(iter):
+        print(f"Iteração {i + 1}/{iter}")
+        f, p, h, hl = avaliar_imagem(imagepath, gtpath, geracoes, arglambda, nos, levels_back, nos_por_camada)
+        fit_geral += f
+    print(f"Fitness médio após {iter} iterações: {fit_geral / iter}")
 """som += f
+#SALVAR O GENOMA DO PAI E DOS FILHOS A CADA 10 GERAÇÕES
 f, p, h, hl = avaliar_imagem('OriginalImages/HW02_dibco2013.bmp', 'GTimages/HW02_estGT_dibco2013.tiff', n_geracoes=100, n_lambda=5)
 som += f
 f, p, h, hl = avaliar_imagem('OriginalImages/HW03_dibco2013.bmp', 'GTimages/HW03_estGT_dibco2013.tiff', n_geracoes=100, n_lambda=5)
@@ -148,4 +144,7 @@ f, p, h, hl = avaliar_imagem('OriginalImages/PR08_dibco2013.bmp', 'GTimages/PR08
 som += f
 print(f"Somatório dos resultados: {som}")
 print(f"Média dos resultados: {som/16}")
-grafico(h, hl, 'PR08_dibco2013')"""
+grafico(h, hl, 'PR08_dibco2013')
+"""
+if __name__ == "__main__":
+    main()
