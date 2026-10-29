@@ -46,9 +46,9 @@ operadores = {
 
 
 
+
 def avaliar_imagem(imagepath, outputpath, n_geracoes, n_lambda, nos, levels_back, nos_por_camada):
     global cgp
-
     cgp = CGP(1, operadores, nos, 1, levels_back, nos_por_camada)
     executor = CGPExecutor(cgp)
     evolve = CGPEvolve(cgp, executor)
@@ -100,6 +100,7 @@ def avaliar_imagem(imagepath, outputpath, n_geracoes, n_lambda, nos, levels_back
 
         hist_pai.append(fitness_pai)
         hist_lambda.append(fitness_filhos)
+
         hist_stats.append({
             chave: (
                 valor.item() if isinstance(valor, np.generic) else valor
@@ -112,18 +113,43 @@ def avaliar_imagem(imagepath, outputpath, n_geracoes, n_lambda, nos, levels_back
             f"filhos={fitness_filhos}"
         )
         print(f"Estatísticas: {hist_stats[-1]}")
-        print(f"Média fitness dos filhos = {sum(fitness_filhos) / len(fitness_filhos)}")
+        print(
+            f"Média fitness dos filhos = "
+            f"{sum(fitness_filhos) / len(fitness_filhos)}"
+        )
+
+    genoma_melhor_pai = [
+        list(gene) if isinstance(gene, (list, tuple)) else gene
+        for gene in pai
+    ]
+
+    cgp.genoma = pai
+    executor.cgp.genoma = pai
+    cgp.exibir_grafo(cgp, cgp.genoma, f"{imagepath}_melhor_grafo.png")
+    nos_ativos = sorted(
+        no for no in executor.nos_ativos()
+        if cgp.n_entradas <= no < cgp.n_entradas + cgp.n_nos
+    )
+
+    funcoes_nos_ativos = [
+        {
+            "no": no,
+            "operador_id": pai[no][0],
+            "funcao": operadores[pai[no][0]]["funcao"].__name__
+        }
+        for no in nos_ativos
+    ]
 
     return (
         float(pai.fitness.values[0]),
         pai,
         hist_pai,
         hist_lambda,
-        hist_stats
+        hist_stats,
+        genoma_melhor_pai,
+        nos_ativos,
+        funcoes_nos_ativos
     )
-
-
-
 
 def main():
     if len(sys.argv) < 9:
@@ -164,13 +190,11 @@ def main():
                 caminho_gt = os.path.join(pasta_gt, nome_gt)
 
                 if os.path.isfile(caminho_gt):
-                    pares_imagens.append(
-                        (
-                            os.path.join(pasta_original, nome),
-                            caminho_gt,
-                            identificador
-                        )
-                    )
+                    pares_imagens.append((
+                        os.path.join(pasta_original, nome),
+                        caminho_gt,
+                        identificador
+                    ))
 
         if not pares_imagens:
             print("Nenhum par de imagens correspondente foi encontrado.")
@@ -182,13 +206,11 @@ def main():
 
     else:
         identificador = os.path.basename(imagepath).split("_dibco2013")[0]
-        pares_imagens.append(
-            (
-                os.path.join("OriginalImages", imagepath),
-                os.path.join("GTimages", gtpath),
-                identificador
-            )
-        )
+        pares_imagens.append((
+            os.path.join("OriginalImages", imagepath),
+            os.path.join("GTimages", gtpath),
+            identificador
+        ))
 
     for caminho_imagem, caminho_gt, identificador in pares_imagens:
         if not os.path.isfile(caminho_imagem):
@@ -208,7 +230,10 @@ def main():
             for i in range(iteracoes):
                 print(f"Iteração {i + 1}/{iteracoes}")
 
-                f, p, hp, hl, hs = avaliar_imagem(
+                (
+                    f, p, hp, hl, hs,
+                    genoma, nos_ativos, funcoes_ativas
+                ) = avaliar_imagem(
                     caminho_imagem,
                     caminho_gt,
                     geracoes,
@@ -223,12 +248,21 @@ def main():
                 arquivo.write(f"iteracao: {i + 1}\n")
                 arquivo.write(f"geracoes: {geracoes}\n")
                 arquivo.write(f"lambda: {arglambda}\n")
+                arquivo.write(f"nos: {nos}\n")
                 arquivo.write(f"fitness_final: {float(f)}\n")
                 arquivo.write(f"historico_pais: {hp!r}\n")
                 arquivo.write(f"historico_lambda: {hl!r}\n")
                 arquivo.write(f"historico_stats: {hs!r}\n")
+                arquivo.write(f"genoma_melhor_pai: {genoma!r}\n")
+                arquivo.write(f"nos_ativos_melhor_pai: {nos_ativos!r}\n")
+                arquivo.write(f"quantidade_nos_ativos: {len(nos_ativos)}\n")
+                arquivo.write(f"funcoes_nos_ativos: {funcoes_ativas!r}\n")
                 arquivo.write("\n")
                 arquivo.flush()
+
+                print(f"Genoma final salvo para a iteração {i + 1}.")
+                print(f"Nós ativos: {nos_ativos}")
+                print(f"Funções ativas: {funcoes_ativas}")
 
             fitness_medio = sum(fitness_iteracoes) / len(fitness_iteracoes)
 
@@ -241,6 +275,7 @@ def main():
             f"{fitness_medio}"
         )
         print(f"Resultados salvos em {arquivo_resultado}")
+
 
 if __name__ == "__main__":
     main()

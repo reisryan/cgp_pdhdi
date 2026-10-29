@@ -1,0 +1,16 @@
+# Resultados das execuções
+*_result.txt
+
+# Gráficos gerados
+*_pais.png
+*_filhos.png
+*_nos.png
+*_grafo.png
+
+#Cache
+/__pycache__/
+*.py[cod]
+
+#Venv
+venv/
+.venv/
