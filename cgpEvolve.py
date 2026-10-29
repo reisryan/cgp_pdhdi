@@ -47,6 +47,8 @@ class CGPEvolve:
         
         while not mutate_active_node:
             nos_ativos = fe.nos_ativos()
+            nos_inativos = [i for i in range(filho.n_entradas, filho.n_entradas + filho.n_nos) if i not in nos_ativos]
+            self.stats["nos_ativos"] = len(nos_ativos)
             rnd = np.random.random()
             self.stats["tentativas"] += 1
 

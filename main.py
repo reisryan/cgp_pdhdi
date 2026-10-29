@@ -44,6 +44,8 @@ operadores = {
     # subtração de 2 imagens
 }
 
+
+
 def avaliar_imagem(imagepath, outputpath, n_geracoes, n_lambda, nos, levels_back, nos_por_camada):
     global cgp
 
@@ -65,10 +67,13 @@ def avaliar_imagem(imagepath, outputpath, n_geracoes, n_lambda, nos, levels_back
     pai = toolbox.individual()
     pai.fitness.values = toolbox.evaluate(pai)
 
-    hist_pai, hist_lambda, hist_stats = [], [], []
+    hist_pai = []
+    hist_lambda = []
+    hist_stats = []
 
     for geracao in range(1, n_geracoes + 1):
-        filhos, melhores = [], []
+        filhos = []
+        melhores = []
 
         for l in range(n_lambda):
             filho, = toolbox.mutate(pai)
@@ -88,37 +93,40 @@ def avaliar_imagem(imagepath, outputpath, n_geracoes, n_lambda, nos, levels_back
         elif neutros:
             pai = random.choice(neutros)
 
-        print(
-            f"Geração {geracao}: FITNESS, pai: {pai.fitness.values[0]}, "
-            f"filhos: {[float(f.fitness.values[0]) for f in filhos]}"
-        )
-        print(
-            f"nos ativos: {evolve.stats['nos_ativos']}, "
-            f"mutações válidas: {evolve.stats['validas']}, "
-            f"mutações descartadas: {evolve.stats['descartadas']} \n"
-            f"mutações em nós: {evolve.stats['mut_no']}, "
-            f"mutações em arestas: {evolve.stats['mut_aresta']}, "
-            f"mutações em saídas: {evolve.stats['mut_saida']}, "
-            f"mutações em nós ativos: {evolve.stats['mut_ativa']}, "
-            f"mutações em nós inativos: {evolve.stats['mut_inativa']}"
-        )
-        print(
-            f"Média fitness = "
-            f"{sum(f.fitness.values[0] for f in filhos) / len(filhos)}"
-        )
+        fitness_pai = float(pai.fitness.values[0])
+        fitness_filhos = [
+            float(f.fitness.values[0]) for f in filhos
+        ]
 
-        if geracao % 10 == 0:
-            hist_pai.append(float(pai.fitness.values[0]))
-            hist_lambda.append(
-                [float(f.fitness.values[0]) for f in filhos]
+        hist_pai.append(fitness_pai)
+        hist_lambda.append(fitness_filhos)
+        hist_stats.append({
+            chave: (
+                valor.item() if isinstance(valor, np.generic) else valor
             )
-            hist_stats.append(dict(evolve.stats))
+            for chave, valor in evolve.stats.items()
+        })
 
-    return pai.fitness.values[0], pai, hist_pai, hist_lambda, hist_stats
+        print(
+            f"Geração {geracao}: pai={fitness_pai}, "
+            f"filhos={fitness_filhos}"
+        )
+        print(f"Estatísticas: {hist_stats[-1]}")
+        print(f"Média fitness dos filhos = {sum(fitness_filhos) / len(fitness_filhos)}")
+
+    return (
+        float(pai.fitness.values[0]),
+        pai,
+        hist_pai,
+        hist_lambda,
+        hist_stats
+    )
+
+
 
 
 def main():
-    if len(sys.argv) < 8:
+    if len(sys.argv) < 9:
         print(
             "Uso: python main.py <iteracoes> <geracoes> <lambda> "
             "<nos> <levels_back> <nos_por_camada> <imagepath> <gtpath>"
@@ -192,11 +200,11 @@ def main():
             continue
 
         arquivo_resultado = f"{identificador}_result.txt"
-        fit_geral = 0
+        fitness_iteracoes = []
 
         print(f"\nImagem: {identificador}")
 
-        with open(arquivo_resultado, "a", encoding="utf-8") as arquivo:
+        with open(arquivo_resultado, "w", encoding="utf-8") as arquivo:
             for i in range(iteracoes):
                 print(f"Iteração {i + 1}/{iteracoes}")
 
@@ -210,29 +218,29 @@ def main():
                     nos_por_camada
                 )
 
-                fit_geral += f
+                fitness_iteracoes.append(float(f))
 
-                for indice, stats in enumerate(hs):
-                    geracao_checkpoint = (indice + 1) * 10
-
-                    arquivo.write(f"Iteração {i + 1}: geração {geracao_checkpoint}\n")
-                    arquivo.write(f"Histórico pai: {hp[:indice + 1]}\n")
-                    arquivo.write(f"Histórico lambda: {hl[:indice + 1]}\n")
-                    arquivo.write("evolve.stats:\n")
-                    for atributo, valor in stats.items():
-                        arquivo.write(f"{atributo}: {valor}\n")
-                    arquivo.write("\n")
+                arquivo.write(f"iteracao: {i + 1}\n")
+                arquivo.write(f"geracoes: {geracoes}\n")
+                arquivo.write(f"lambda: {arglambda}\n")
+                arquivo.write(f"fitness_final: {float(f)}\n")
+                arquivo.write(f"historico_pais: {hp!r}\n")
+                arquivo.write(f"historico_lambda: {hl!r}\n")
+                arquivo.write(f"historico_stats: {hs!r}\n")
+                arquivo.write("\n")
                 arquivo.flush()
-            arquivo.write(
-                f"Fitness médio após {iteracoes} iterações: "
-                f"{fit_geral / iteracoes}\n\n"
-            )
+
+            fitness_medio = sum(fitness_iteracoes) / len(fitness_iteracoes)
+
+            arquivo.write(f"fitness_medio_iteracoes: {fitness_medio!r}\n")
+            arquivo.write(f"fitness_por_iteracao: {fitness_iteracoes!r}\n")
+            arquivo.write("\n")
 
         print(
             f"Fitness médio de {identificador} após {iteracoes} iterações: "
-            f"{fit_geral / iteracoes}"
+            f"{fitness_medio}"
         )
         print(f"Resultados salvos em {arquivo_resultado}")
-    
+
 if __name__ == "__main__":
     main()
