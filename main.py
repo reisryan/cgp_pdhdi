@@ -212,36 +212,26 @@ def main():
             identificador
         ))
 
-    for caminho_imagem, caminho_gt, identificador in pares_imagens:
-        if not os.path.isfile(caminho_imagem):
-            print(f"Imagem não encontrada: {caminho_imagem}")
-            continue
+    
+    for i in range(iteracoes):
+        for caminho_imagem, caminho_gt, identificador in pares_imagens:
+            if not os.path.isfile(caminho_imagem):
+                print(f"Imagem não encontrada: {caminho_imagem}")
+                continue
+        
+            if not os.path.isfile(caminho_gt):
+                print(f"Ground truth não encontrado: {caminho_gt}")
+                continue
+        
+            arquivo_resultado = f"{identificador}_result.txt"
+            fitness_iteracoes = []
+        
+            print(f"\nImagem: {identificador}")
 
-        if not os.path.isfile(caminho_gt):
-            print(f"Ground truth não encontrado: {caminho_gt}")
-            continue
-
-        arquivo_resultado = f"{identificador}_result.txt"
-        fitness_iteracoes = []
-
-        print(f"\nImagem: {identificador}")
-
-        with open(arquivo_resultado, "w", encoding="utf-8") as arquivo:
-            for i in range(iteracoes):
+            with open(arquivo_resultado, "a", encoding="utf-8") as arquivo:
                 print(f"Iteração {i + 1}/{iteracoes}")
 
-                (
-                    f, p, hp, hl, hs,
-                    genoma, nos_ativos, funcoes_ativas
-                ) = avaliar_imagem(
-                    caminho_imagem,
-                    caminho_gt,
-                    geracoes,
-                    arglambda,
-                    nos,
-                    levels_back,
-                    nos_por_camada
-                )
+                (f, p, hp, hl, hs, genoma, nos_ativos, funcoes_ativas) = avaliar_imagem(caminho_imagem, caminho_gt, geracoes, arglambda, nos, levels_back, nos_por_camada)
 
                 fitness_iteracoes.append(float(f))
 
@@ -264,17 +254,17 @@ def main():
                 print(f"Nós ativos: {nos_ativos}")
                 print(f"Funções ativas: {funcoes_ativas}")
 
-            fitness_medio = sum(fitness_iteracoes) / len(fitness_iteracoes)
+                fitness_medio = sum(fitness_iteracoes) / len(fitness_iteracoes)
 
-            arquivo.write(f"fitness_medio_iteracoes: {fitness_medio!r}\n")
-            arquivo.write(f"fitness_por_iteracao: {fitness_iteracoes!r}\n")
-            arquivo.write("\n")
+                arquivo.write(f"fitness_medio_iteracoes: {fitness_medio!r}\n")
+                arquivo.write(f"fitness_por_iteracao: {fitness_iteracoes!r}\n")
+                arquivo.write("\n")
 
-        print(
+            print(
             f"Fitness médio de {identificador} após {iteracoes} iterações: "
             f"{fitness_medio}"
         )
-        print(f"Resultados salvos em {arquivo_resultado}")
+            print(f"Resultados salvos em {arquivo_resultado}")
 
 
 if __name__ == "__main__":
