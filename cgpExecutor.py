@@ -41,7 +41,7 @@ class CGPExecutor:
         print(f"Saídas: {genoma[-self.cgp.n_saidas:]}")
 
 
-    def executar(self, arquivo): #grafo
+    """def executar(self, arquivo): #grafo
         OUTPUTS = {}
 
         OUTPUTS[0] = cv.imread(arquivo, cv.IMREAD_GRAYSCALE).astype("uint8")
@@ -58,5 +58,20 @@ class CGPExecutor:
             conexao = gene[1]
             entrada = OUTPUTS[conexao]
             OUTPUTS[no] = funcao(entrada)
+
+        return OUTPUTS"""
+
+    def executar_array(self, imagem, nos_ativos=None):
+        if nos_ativos is None:
+            nos_ativos = self.nos_ativos()
+
+        OUTPUTS = {i: imagem for i in range(self.cgp.n_entradas)}
+
+        for no in range(self.cgp.n_entradas, self.cgp.n_entradas + self.cgp.n_nos):
+            if no not in nos_ativos:
+                continue
+            op, con = self.cgp.genoma[no]
+            funcao = self.cgp.funcoes[op]["funcao"]
+            OUTPUTS[no] = funcao(OUTPUTS[con])
 
         return OUTPUTS
